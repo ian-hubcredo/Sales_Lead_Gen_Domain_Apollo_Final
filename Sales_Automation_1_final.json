@@ -1,0 +1,1796 @@
+{
+  "name": "Sales Automation 1 final",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -592,
+        16
+      ],
+      "id": "7aef5858-ad3e-4d24-9268-b2e450d225c0",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1fEqqv04_RITrZdXVl-wGrIZpW9VxYmH-aco8aXrVCXw",
+          "mode": "list",
+          "cachedResultName": "sales automation 1 final ",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/<REDACTED_SHEET_ID>/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/<REDACTED_SHEET_ID>/edit#gid=0"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -384,
+        16
+      ],
+      "id": "f3da864b-de58-423d-a89b-5307708e170f",
+      "name": "Get row(s) in sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "<REDACTED_CREDENTIAL_ID>", "name": "<REDACTED_CREDENTIAL_NAME>"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Craft a search query for the tavily tool and use the company name to search the domain of the company \n\ncompany name:{{ $json[\"Company Name\"] }}\n\n\nOutput:\n- Company Name: [from LinkedIn]\n- Domain: [Clean Domain only]",
+        "hasOutputParser": true,
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [
+        -176,
+        16
+      ],
+      "id": "2487fc4b-2230-4ee5-a650-94c0c0ecc4ed",
+      "name": "AI Agent",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4.1-mini"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        -288,
+        272
+      ],
+      "id": "40e63810-c604-4068-9ba8-a35e53352cc3",
+      "name": "OpenAI Chat Model",
+      "credentials": {
+        "openAiApi": {
+          "id": "<REDACTED_CREDENTIAL_ID>", "name": "<REDACTED_CREDENTIAL_NAME>"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "query": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Query', `search the web for the company domain using the company name. for example \" search the company domain for this company\"`, 'string') }}",
+        "options": {}
+      },
+      "type": "@tavily/n8n-nodes-tavily.tavilyTool",
+      "typeVersion": 1,
+      "position": [
+        -96,
+        256
+      ],
+      "id": "cac63058-60d4-45ba-828c-fa08be7eff60",
+      "name": "Search in Tavily",
+      "credentials": {
+        "tavilyApi": {
+          "id": "<REDACTED_CREDENTIAL_ID>", "name": "<REDACTED_CREDENTIAL_NAME>"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsonSchemaExample": "{\n\t\"company_name\" : \"\",\n    \"domain\" : \"\"\n}",
+        "autoFix": "={{ false }}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        64,
+        256
+      ],
+      "id": "e97854ad-7483-4f41-966d-4209c4d04258",
+      "name": "Structured Output Parser"
+    },
+    {
+      "parameters": {
+        "jsCode": "// n8n Code node — Build Apollo Mixed People Search POST body\n// Target: Hiring Managers, Recruiters, Talent Acquisition\n// Updated to work with domain field in output object\n\n// 1) Inputs\nconst items = $input.all();\n\n// 2) Input validation\nif (!items || items.length === 0) {\n  return [{ json: { error: 'No input items received' } }];\n}\n\n// 3) Extract and clean domains from output.domain field\nconst allDomains = Array.from(new Set(\n  items\n    .map(item => {\n      // Access domain from nested output object\n      const domain = String(item.json?.output?.domain || '').trim().toLowerCase();\n      \n      if (!domain) return '';\n      \n      // Clean domain - remove protocol, www, paths\n      let cleanDomain = domain\n        .replace(/^https?:\\/\\//i, '')  // Remove protocol\n        .replace(/^www\\./, '')          // Remove www.\n        .split('/')[0]                  // Get domain only (remove paths)\n        .split('?')[0]                  // Remove query params\n        .split('#')[0]                  // Remove anchors\n        .trim();\n      \n      return cleanDomain;\n    })\n    .filter(d => {\n      // Filter out empty strings and invalid domains\n      if (!d) return false;\n      \n      // Must have at least one dot and valid domain structure\n      const domainRegex = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*\\.[a-z]{2,}$/i;\n      return domainRegex.test(d);\n    })\n));\n\n// 4) Filter out unwanted domains (like linkedin.com from job postings)\nconst excludedDomains = ['linkedin.com', 'indeed.com', 'glassdoor.com', 'monster.com'];\nconst validDomains = allDomains.filter(d => !excludedDomains.includes(d));\n\n// 5) Guard clause\nif (validDomains.length === 0) {\n  return [{ \n    json: { \n      error: 'No valid domains found',\n      totalProcessed: items.length,\n      domainsExtracted: allDomains.length,\n      domainsExcluded: allDomains.length - validDomains.length\n    } \n  }];\n}\n\n// 6) Hiring & Recruiting Titles\nconst titles = [\n  // Talent Acquisition Leadership\n  'VP of Talent Acquisition',\n  'Vice President Talent Acquisition',\n  'VP Talent Acquisition',\n  'Director of Talent Acquisition',\n  'Talent Acquisition Director',\n  'Head of Talent Acquisition',\n  'Head of Recruiting',\n  \n  // Recruiting Leadership\n  'VP of Recruiting',\n  'Vice President Recruiting',\n  'Director of Recruiting',\n  'Recruiting Director',\n  'Director of Recruitment',\n  'Recruitment Director',\n  \n  // HR Leadership (often involved in hiring)\n  'VP of Human Resources',\n  'VP Human Resources',\n  'Director of Human Resources',\n  'HR Director',\n  'Head of HR',\n  'Head of People',\n  'Director of People',\n  'People Director',\n  \n  // Chief Level\n  'Chief Human Resources Officer',\n  'CHRO',\n  'Chief People Officer',\n  'CPO',\n  'Chief Talent Officer',\n  \n  // Senior Recruiters\n  'Senior Recruiter',\n  'Lead Recruiter',\n  'Senior Talent Acquisition Partner',\n  'Principal Recruiter',\n  'Recruiting Manager',\n  'Talent Acquisition Manager',\n  'Talent Acquisition Lead',\n  \n  // Hiring Manager Titles\n  'Hiring Manager',\n  'Technical Recruiter',\n  'Technical Recruiting Manager'\n];\n\n// 7) Build POST body for mixed_people/search\nconst body = {\n  person_titles: titles,\n  person_current_titles: titles,\n  q_organization_domains_list: validDomains,\n  page: 1,\n  per_page: 10\n};\n\n// 8) Output for HTTP Request node with enhanced metadata\nreturn [{\n  json: {\n    url: 'https://api.apollo.io/api/v1/mixed_people/search',\n    method: 'POST',\n    body,\n    // Metadata for debugging\n    metadata: {\n      totalInputItems: items.length,\n      domainsExtracted: allDomains.length,\n      domainsExcluded: allDomains.length - validDomains.length,\n      domainsUsed: validDomains.length,\n      excludedDomainsList: allDomains.filter(d => excludedDomains.includes(d)),\n      targetTitles: titles.length,\n      targetCategory: 'Hiring Managers, Recruiters & Talent Acquisition'\n    },\n    // Full lists for verification\n    processedDomains: validDomains,\n    allExtractedDomains: allDomains,\n    targetTitles: titles\n  }\n}];\n\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        256,
+        0
+      ],
+      "id": "c09aa930-89e2-4900-a8c3-bc98611f889c",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.url }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.body }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        464,
+        0
+      ],
+      "id": "666df3cb-77ba-444e-8f15-7ec17e3643e9",
+      "name": "Apollo People search",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "<REDACTED_CREDENTIAL_ID>", "name": "<REDACTED_CREDENTIAL_NAME>"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "maxItems": 5
+      },
+      "type": "n8n-nodes-base.limit",
+      "typeVersion": 1,
+      "position": [
+        1536,
+        224
+      ],
+      "id": "e2ad4028-f11f-4acd-aa25-2abd24bc2263",
+      "name": "Limit"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get the input data\nconst inputData = $input.all();\n\n// Extract people array from the nested structure\nconst data = inputData[0].json;\nconst people = data.people;\n\n// Return each person as a separate item with flattened structure\nreturn people.map(person => ({\n  json: {\n    // Person fields\n    id: person.id,\n    first_name: person.first_name,\n    last_name_obfuscated: person.last_name_obfuscated,\n    title: person.title,\n    last_refreshed_at: person.last_refreshed_at,\n    has_email: person.has_email,\n    has_city: person.has_city,\n    has_state: person.has_state,\n    has_country: person.has_country,\n    has_direct_phone: person.has_direct_phone,\n    \n    // Organization fields (flattened with org_ prefix)\n    org_name: person.organization.name,\n    org_has_industry: person.organization.has_industry,\n    org_has_phone: person.organization.has_phone,\n    org_has_city: person.organization.has_city,\n    org_has_state: person.organization.has_state,\n    org_has_country: person.organization.has_country,\n    org_has_zip_code: person.organization.has_zip_code,\n    org_has_revenue: person.organization.has_revenue,\n    org_has_employee_count: person.organization.has_employee_count\n  }\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        640,
+        224
+      ],
+      "id": "bb7a30e5-1f3b-4bbd-a806-e5bbfa470fc9",
+      "name": "Code in JavaScript2"
+    },
+    {
+      "parameters": {
+        "maxItems": 2
+      },
+      "type": "n8n-nodes-base.limit",
+      "typeVersion": 1,
+      "position": [
+        848,
+        224
+      ],
+      "id": "5c0d4a64-f013-4682-937a-dbcf3c6a3f34",
+      "name": "Limit1"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get the input data\nconst inputData = $input.all();\n\n// Process each item (person)\nreturn inputData.map(item => {\n  const person = item.json.person;\n  const org = person.organization;\n  \n  return {\n    json: {\n      // Person Information\n      person_id: person.id || null,\n      first_name: person.first_name || null,\n      last_name: person.last_name || null,\n      full_name: person.name || null,\n      email: person.email || null,\n      email_status: person.email_status || null,\n      \n      // Social Links\n      linkedin_url: person.linkedin_url || null,\n      twitter_url: person.twitter_url || null,\n      github_url: person.github_url || null,\n      facebook_url: person.facebook_url || null,\n      \n      // Job Information\n      title: person.title || null,\n      headline: person.headline || null,\n      seniority: person.seniority || null,\n      departments: person.departments ? person.departments.join(', ') : null,\n      functions: person.functions ? person.functions.join(', ') : null,\n      \n      // Location\n      city: person.city || null,\n      state: person.state || null,\n      country: person.country || null,\n      formatted_address: person.formatted_address || null,\n      \n      // Company Information\n      company_id: org.id || null,\n      company_name: org.name || null,\n      company_website: org.website_url || null,\n      company_linkedin: org.linkedin_url || null,\n      company_phone: org.phone || null,\n      company_industry: org.industry || null,\n      company_employees: org.estimated_num_employees || null,\n      company_revenue: org.organization_revenue_printed || null,\n      company_founded_year: org.founded_year || null,\n      company_description: org.short_description || null,\n      \n      // Company Location\n      company_city: org.city || null,\n      company_state: org.state || null,\n      company_country: org.country || null,\n      company_address: org.raw_address || null\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1312,
+        224
+      ],
+      "id": "bbcc347d-157a-415a-a26c-9a60a3cb2a4c",
+      "name": "Code in JavaScript3"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.apollo.io/api/v1/mixed_people/api_search",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {}
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"page\": 1,\n  \"per_page\": 50,\n  \"person_titles\": [\n    \"CTO\",\n    \"Chief Technology Officer\",\n    \"VP Engineering\"\n  ],\n  \"person_seniorities\": [\n    \"vp\",\n    \"c_suite\"\n  ],\n  \"person_locations\": [\n    \"United States\"\n  ],\n  \"organization_num_employees_ranges\": [\n    \"51-200\",\n    \"201-500\"\n  ],\n  \"q_organization_keyword_tags\": [\n    \"SaaS\",\n    \"B2B\"\n  ],\n  \"organization_revenue_ranges\": [\n    \"10M-50M\",\n    \"50M-100M\"\n  ],\n  \"organization_technologies\": [\n    \"AWS\",\n    \"Salesforce\"\n  ],\n  \"organization_latest_funding_stage_cd\": [\n    \"series_b\",\n    \"series_c\"\n  ],\n  \"has_email\": true\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1600,
+        -32
+      ],
+      "id": "734b813e-0db8-4a23-b9b0-9e41c7b1bb64",
+      "name": "HTTP Request2",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "<REDACTED_CREDENTIAL_ID>", "name": "<REDACTED_CREDENTIAL_NAME>"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Person Title"
+            },
+            {
+              "fieldLabel": "Person Seniority",
+              "fieldType": "dropdown",
+              "fieldOptions": {
+                "values": [
+                  {
+                    "option": "entry"
+                  },
+                  {
+                    "option": "senior"
+                  },
+                  {
+                    "option": "manager"
+                  },
+                  {
+                    "option": "director"
+                  },
+                  {
+                    "option": "vp"
+                  },
+                  {
+                    "option": "c_suite"
+                  },
+                  {
+                    "option": "owner"
+                  },
+                  {
+                    "option": "partner"
+                  }
+                ]
+              }
+            },
+            {
+              "fieldLabel": "Organization Size",
+              "fieldType": "dropdown",
+              "fieldOptions": {
+                "values": [
+                  {
+                    "option": "1-10"
+                  },
+                  {
+                    "option": "11-50"
+                  },
+                  {
+                    "option": "51-200"
+                  },
+                  {
+                    "option": "201-500"
+                  },
+                  {
+                    "option": "501-1000"
+                  },
+                  {
+                    "option": "1001-5000"
+                  },
+                  {
+                    "option": "5001-10000"
+                  }
+                ]
+              }
+            },
+            {
+              "fieldLabel": "Organization Revenue",
+              "fieldType": "dropdown",
+              "fieldOptions": {
+                "values": [
+                  {
+                    "option": "0-1M"
+                  },
+                  {
+                    "option": "1M-10M"
+                  },
+                  {
+                    "option": "10M-50M"
+                  },
+                  {
+                    "option": "50M-100M"
+                  }
+                ]
+              }
+            },
+            {
+              "fieldLabel": "Person Department",
+              "fieldType": "dropdown",
+              "fieldOptions": {
+                "values": [
+                  {
+                    "option": "sales"
+                  },
+                  {
+                    "option": "marketing"
+                  },
+                  {
+                    "option": "operations"
+                  },
+                  {
+                    "option": "engineering"
+                  },
+                  {
+                    "option": "finance"
+                  },
+                  {
+                    "option": "legal"
+                  },
+                  {
+                    "option": "product"
+                  },
+                  {
+                    "option": "human_resources"
+                  },
+                  {
+                    "option": "customer_success"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.3,
+      "position": [
+        272,
+        224
+      ],
+      "id": "7cbfa5eb-c4db-4136-a088-f292a6eaddaa",
+      "name": "On form submission",
+      "webhookId": "<REDACTED_WEBHOOK_ID>"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.apollo.io/api/v1/mixed_people/api_search",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Cache-Control",
+              "value": "no-cache"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"page\": 1,\n  \"per_page\": 10,\n  \"person_titles\": [\n    \"Software Engineer\",\n    \"Developer\"\n  ],\n  \"person_locations\": [\n    \"United States\"\n  ],\n  \"person_seniorities\": [\n    \"senior\",\n    \"entry\"\n  ]\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        448,
+        224
+      ],
+      "id": "bd444ffc-da62-4c1f-82d8-c59b1364f942",
+      "name": "people search from icp",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "<REDACTED_CREDENTIAL_ID>", "name": "<REDACTED_CREDENTIAL_NAME>"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.apollo.io/api/v1/people/match",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Cache-Control",
+              "value": "no-cache"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "id",
+              "value": "={{ $json.id }}"
+            },
+            {
+              "name": "reveal_personal_emails",
+              "value": "true"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1072,
+        224
+      ],
+      "id": "bf52bb3a-b198-4b81-afb8-ddb387229604",
+      "name": "people enrich",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "<REDACTED_CREDENTIAL_ID>", "name": "<REDACTED_CREDENTIAL_NAME>"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Get row(s) in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get row(s) in sheet": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search in Tavily": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Apollo People search",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Apollo People search": {
+      "main": [
+        []
+      ]
+    },
+    "Code in JavaScript2": {
+      "main": [
+        [
+          {
+            "node": "Limit1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Limit1": {
+      "main": [
+        [
+          {
+            "node": "people enrich",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript3": {
+      "main": [
+        [
+          {
+            "node": "Limit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Limit": {
+      "main": [
+        []
+      ]
+    },
+    "people search from icp": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "people enrich": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "On form submission": {
+      "main": [
+        [
+          {
+            "node": "people search from icp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "pinData": {
+    "people search from icp": [
+      {
+        "json": {
+          "total_entries": 1110796,
+          "people": [
+            {
+              "id": "5f0b9fa89031830001e5b729",
+              "first_name": "Parker",
+              "last_name_obfuscated": "Be***t",
+              "title": "Software Engineer & Developer",
+              "last_refreshed_at": "2025-12-03T00:58:31.781+00:00",
+              "has_email": true,
+              "has_city": true,
+              "has_state": true,
+              "has_country": true,
+              "has_direct_phone": "Yes",
+              "organization": {
+                "name": "Edmunds GovTech",
+                "has_industry": true,
+                "has_phone": true,
+                "has_city": true,
+                "has_state": true,
+                "has_country": true,
+                "has_zip_code": true,
+                "has_revenue": true,
+                "has_employee_count": true
+              }
+            },
+            {
+              "id": "5b22a08ea6da98791dff8aac",
+              "first_name": "Josh",
+              "last_name_obfuscated": "Wr***t",
+              "title": "Software Engineer and Developer",
+              "last_refreshed_at": "2025-12-04T06:20:53.000+00:00",
+              "has_email": true,
+              "has_city": true,
+              "has_state": true,
+              "has_country": true,
+              "has_direct_phone": "Yes",
+              "organization": {
+                "name": "HemaSource, Inc",
+                "has_industry": true,
+                "has_phone": true,
+                "has_city": true,
+                "has_state": true,
+                "has_country": true,
+                "has_zip_code": true,
+                "has_revenue": true,
+                "has_employee_count": true
+              }
+            },
+            {
+              "id": "6091b4866643f40001d6f65e",
+              "first_name": "Nick",
+              "last_name_obfuscated": "Ro***n",
+              "title": "Software Engineer (Dev)",
+              "last_refreshed_at": "2025-12-06T08:28:38.000+00:00",
+              "has_email": true,
+              "has_city": true,
+              "has_state": true,
+              "has_country": true,
+              "has_direct_phone": "Yes",
+              "organization": {
+                "name": "Palantir Technologies",
+                "has_industry": true,
+                "has_phone": true,
+                "has_city": true,
+                "has_state": true,
+                "has_country": true,
+                "has_zip_code": true,
+                "has_revenue": true,
+                "has_employee_count": true
+              }
+            },
+            {
+              "id": "5c2fd01bf65125993fab4fbb",
+              "first_name": "Neil",
+              "last_name_obfuscated": "Ma***s",
+              "title": "Software Engineer Developer",
+              "last_refreshed_at": "2025-12-12T21:40:38.939+00:00",
+              "has_email": true,
+              "has_city": false,
+              "has_state": true,
+              "has_country": true,
+              "has_direct_phone": "Yes",
+              "organization": {
+                "name": "Fidelity Investments",
+                "has_industry": true,
+                "has_phone": true,
+                "has_city": true,
+                "has_state": true,
+                "has_country": true,
+                "has_zip_code": true,
+                "has_revenue": true,
+                "has_employee_count": true
+              }
+            },
+            {
+              "id": "646e52530549ca0001e687f6",
+              "first_name": "Ihor",
+              "last_name_obfuscated": "Ha***v",
+              "title": "Software Engineer and Developer",
+              "last_refreshed_at": "2025-12-03T22:19:27.013+00:00",
+              "has_email": true,
+              "has_city": true,
+              "has_state": true,
+              "has_country": true,
+              "has_direct_phone": "Maybe: please request direct dial via people/bulk_match",
+              "organization": {
+                "name": "Toptal",
+                "has_industry": true,
+                "has_phone": true,
+                "has_city": true,
+                "has_state": true,
+                "has_country": true,
+                "has_zip_code": true,
+                "has_revenue": true,
+                "has_employee_count": true
+              }
+            },
+            {
+              "id": "60ae00869f12b4000194d4d8",
+              "first_name": "Laura",
+              "last_name_obfuscated": "Da***s",
+              "title": "Software Engineer/Developer",
+              "last_refreshed_at": "2025-12-06T12:13:30.819+00:00",
+              "has_email": true,
+              "has_city": true,
+              "has_state": true,
+              "has_country": true,
+              "has_direct_phone": "Yes",
+              "organization": {
+                "name": "CNF Technologies",
+                "has_industry": true,
+                "has_phone": true,
+                "has_city": true,
+                "has_state": true,
+                "has_country": true,
+                "has_zip_code": true,
+                "has_revenue": true,
+                "has_employee_count": true
+              }
+            },
+            {
+              "id": "54a70335746869705adf380d",
+              "first_name": "Jash",
+              "last_name_obfuscated": "Hi***i",
+              "title": "Software Engineer/Developer",
+              "last_refreshed_at": "2025-12-12T01:06:38.081+00:00",
+              "has_email": true,
+              "has_city": true,
+              "has_state": true,
+              "has_country": true,
+              "has_direct_phone": "Yes",
+              "organization": {
+                "name": "UnitedHealthcare",
+                "has_industry": true,
+                "has_phone": true,
+                "has_city": false,
+                "has_state": false,
+                "has_country": false,
+                "has_zip_code": false,
+                "has_revenue": false,
+                "has_employee_count": true
+              }
+            },
+            {
+              "id": "65196dfedf412c000151fc12",
+              "first_name": "Eliezer",
+              "last_name_obfuscated": "Ko***s",
+              "title": "Software Engineer/developer",
+              "last_refreshed_at": "2025-11-15T20:42:53.000+00:00",
+              "has_email": true,
+              "has_city": true,
+              "has_state": true,
+              "has_country": true,
+              "has_direct_phone": "Maybe: please request direct dial via people/bulk_match",
+              "organization": {
+                "name": "web developer",
+                "has_industry": true,
+                "has_phone": false,
+                "has_city": false,
+                "has_state": false,
+                "has_country": false,
+                "has_zip_code": false,
+                "has_revenue": false,
+                "has_employee_count": true
+              }
+            },
+            {
+              "id": "66a774981d9ab900018ebf42",
+              "first_name": "Nichola",
+              "last_name_obfuscated": "Nd***u",
+              "title": "Software Engineer | Developer",
+              "last_refreshed_at": "2025-12-11T14:36:00.898+00:00",
+              "has_email": true,
+              "has_city": true,
+              "has_state": true,
+              "has_country": true,
+              "has_direct_phone": "Maybe: please request direct dial via people/bulk_match",
+              "organization": {
+                "name": "Ally",
+                "has_industry": true,
+                "has_phone": true,
+                "has_city": true,
+                "has_state": true,
+                "has_country": true,
+                "has_zip_code": true,
+                "has_revenue": true,
+                "has_employee_count": true
+              }
+            },
+            {
+              "id": "6130f85248185c00014346e5",
+              "first_name": "Sirisha",
+              "last_name_obfuscated": "Th***a",
+              "title": "Software Engineer/ Developer",
+              "last_refreshed_at": "2025-12-11T16:19:51.065+00:00",
+              "has_email": true,
+              "has_city": true,
+              "has_state": true,
+              "has_country": true,
+              "has_direct_phone": "Maybe: please request direct dial via people/bulk_match",
+              "organization": {
+                "name": "Experian",
+                "has_industry": true,
+                "has_phone": true,
+                "has_city": true,
+                "has_state": true,
+                "has_country": true,
+                "has_zip_code": true,
+                "has_revenue": true,
+                "has_employee_count": true
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "people enrich": [
+      {
+        "json": {
+          "person": {
+            "id": "5f0b9fa89031830001e5b729",
+            "first_name": "Parker",
+            "last_name": "Bennett",
+            "name": "Parker Bennett",
+            "linkedin_url": "<REDACTED_LINKEDIN_URL>",
+            "title": "Software Engineer & Developer",
+            "email_status": "verified",
+            "photo_url": "https://static.licdn.com/aero-v1/sc/h/9c8pery4andzj6ohjkjp54ma2",
+            "twitter_url": null,
+            "github_url": null,
+            "facebook_url": null,
+            "extrapolated_email_confidence": null,
+            "headline": "Software Engineer & Developer",
+            "email": "<REDACTED_EMAIL>",
+            "organization_id": "54a1345569702d2db4fa8100",
+            "employment_history": [
+              {
+                "_id": "692f8b3823295a00016ae5fa",
+                "created_at": null,
+                "current": true,
+                "degree": null,
+                "description": null,
+                "emails": null,
+                "end_date": null,
+                "grade_level": null,
+                "kind": null,
+                "major": null,
+                "org_matched_by_name": false,
+                "organization_id": "54a1345569702d2db4fa8100",
+                "organization_name": "Edmunds GovTech",
+                "raw_address": null,
+                "start_date": "2024-07-01",
+                "title": "Software Engineer & Developer",
+                "updated_at": null,
+                "id": "692f8b3823295a00016ae5fa",
+                "key": "692f8b3823295a00016ae5fa"
+              },
+              {
+                "_id": "692f8b3823295a00016ae5fb",
+                "created_at": null,
+                "current": false,
+                "degree": null,
+                "description": null,
+                "emails": null,
+                "end_date": "2023-08-01",
+                "grade_level": null,
+                "kind": null,
+                "major": null,
+                "org_matched_by_name": false,
+                "organization_id": "556e3730736964115af55101",
+                "organization_name": "Ndustrial",
+                "raw_address": null,
+                "start_date": "2023-05-01",
+                "title": "Software Engineering Intern",
+                "updated_at": null,
+                "id": "692f8b3823295a00016ae5fb",
+                "key": "692f8b3823295a00016ae5fb"
+              },
+              {
+                "_id": "692f8b3823295a00016ae5fc",
+                "created_at": null,
+                "current": false,
+                "degree": null,
+                "description": null,
+                "emails": null,
+                "end_date": "2022-09-01",
+                "grade_level": null,
+                "kind": null,
+                "major": null,
+                "org_matched_by_name": false,
+                "organization_id": "5ed9763645d3ee0001d99a76",
+                "organization_name": "North Carolina State University",
+                "raw_address": null,
+                "start_date": "2021-03-01",
+                "title": "Telecommunications Analyst Intern",
+                "updated_at": null,
+                "id": "692f8b3823295a00016ae5fc",
+                "key": "692f8b3823295a00016ae5fc"
+              },
+              {
+                "_id": "692f8b3823295a00016ae5fd",
+                "created_at": null,
+                "current": false,
+                "degree": null,
+                "description": null,
+                "emails": null,
+                "end_date": "2021-07-01",
+                "grade_level": null,
+                "kind": null,
+                "major": null,
+                "org_matched_by_name": false,
+                "organization_id": "5fa0173bae1cf000d909607e",
+                "organization_name": "Monarch Realty Co.",
+                "raw_address": null,
+                "start_date": "2020-08-01",
+                "title": "Investment Real Estate Broker",
+                "updated_at": null,
+                "id": "692f8b3823295a00016ae5fd",
+                "key": "692f8b3823295a00016ae5fd"
+              },
+              {
+                "_id": "692f8b3823295a00016ae5fe",
+                "created_at": null,
+                "current": false,
+                "degree": null,
+                "description": null,
+                "emails": null,
+                "end_date": "2020-08-01",
+                "grade_level": null,
+                "kind": null,
+                "major": null,
+                "org_matched_by_name": false,
+                "organization_id": "54a26d767468692e711d9c22",
+                "organization_name": "Keller Williams Realty, Inc.",
+                "raw_address": null,
+                "start_date": "2019-12-01",
+                "title": "Independent Real Estate Professional",
+                "updated_at": null,
+                "id": "692f8b3823295a00016ae5fe",
+                "key": "692f8b3823295a00016ae5fe"
+              }
+            ],
+            "street_address": "",
+            "city": "Raleigh",
+            "state": "North Carolina",
+            "country": "United States",
+            "postal_code": null,
+            "formatted_address": "Raleigh, NC, USA",
+            "time_zone": "America/New_York",
+            "organization": {
+              "id": "54a1345569702d2db4fa8100",
+              "name": "Edmunds GovTech",
+              "website_url": "http://www.edmundsgovtech.com",
+              "blog_url": null,
+              "angellist_url": null,
+              "linkedin_url": "<REDACTED_LINKEDIN_COMPANY_URL>",
+              "twitter_url": "https://twitter.com/edmundsgovtech",
+              "facebook_url": "https://facebook.com/edmundsgovtech",
+              "primary_phone": {
+                "number": "<REDACTED_PHONE>",
+                "source": "Owler",
+                "sanitized_number": "+18883366999"
+              },
+              "languages": [
+                "English",
+                "English"
+              ],
+              "alexa_ranking": 314518,
+              "phone": "<REDACTED_PHONE>",
+              "linkedin_uid": "819477",
+              "founded_year": 1972,
+              "publicly_traded_symbol": null,
+              "publicly_traded_exchange": null,
+              "logo_url": "https://zenprospect-production.s3.amazonaws.com/uploads/pictures/693f8c9667f13600010b0c06/picture",
+              "crunchbase_url": null,
+              "primary_domain": "edmundsgovtech.com",
+              "sic_codes": [
+                "7375"
+              ],
+              "naics_codes": [
+                "54133"
+              ],
+              "sanitized_phone": "+18883366999",
+              "industry": "information technology & services",
+              "estimated_num_employees": 200,
+              "keywords": [
+                "financial erp solutions for local government",
+                "superior customer service",
+                "industry leading client retention rate",
+                "government software",
+                "fund accounting",
+                "local government",
+                "government accounting software",
+                "software development",
+                "software implementation",
+                "b2b",
+                "municipal financial reporting",
+                "digital government services",
+                "public sector software",
+                "accounting software",
+                "financial reporting",
+                "recreation management",
+                "community portal",
+                "customer support",
+                "data analytics",
+                "cloud hosting",
+                "utility meter integration",
+                "engineering services",
+                "government",
+                "citizen engagement",
+                "municipal management software",
+                "information technology & services",
+                "revenue management software",
+                "project management",
+                "software customization",
+                "local government solutions",
+                "municipal finance",
+                "services",
+                "utility billing solutions",
+                "online bill pay",
+                "mobile app",
+                "data security",
+                "permitting software",
+                "erp software",
+                "data management",
+                "e-commerce",
+                "finance",
+                "energy & utilities",
+                "cloud computing",
+                "enterprise software",
+                "enterprises",
+                "computer software",
+                "productivity",
+                "computer & network security",
+                "consumer internet",
+                "consumers",
+                "internet",
+                "financial services"
+              ],
+              "organization_revenue_printed": "27M",
+              "organization_revenue": 27000000,
+              "industries": [
+                "information technology & services"
+              ],
+              "secondary_industries": [],
+              "snippets_loaded": true,
+              "industry_tag_id": "5567cd4773696439b10b0000",
+              "industry_tag_hash": {
+                "information technology & services": "5567cd4773696439b10b0000"
+              },
+              "retail_location_count": 0,
+              "raw_address": "301 Tilton Road, Northfield, NJ 08225, US",
+              "street_address": "301 Tilton Rd",
+              "city": "Northfield",
+              "state": "New Jersey",
+              "postal_code": "08225",
+              "country": "United States",
+              "owned_by_organization_id": null,
+              "short_description": "Edmunds GovTech is a software company based in Northfield, New Jersey, that specializes in Enterprise Resource Planning (ERP) solutions for local government agencies across the United States. Founded in 1972, the company has focused exclusively on this sector since 1992, evolving from programming services for the Department of Defense to a leading provider of integrated software solutions. With over 141 employees and approximately $29.6 million in revenue, Edmunds GovTech serves more than 2,150 municipalities and authorities nationwide.\n\nThe company offers a comprehensive ERP platform that includes 28 modules covering various government functions such as finance, tax collection, utility billing, personnel management, permitting, and citizen engagement. Their solutions are designed to improve municipal management and enhance operational efficiency. Edmunds GovTech is recognized for its commitment to usability and innovation, providing tools that empower citizens and promote government transparency. The company values collaboration and has built strong partnerships to expand its offerings and support local government needs effectively.",
+              "suborganizations": [],
+              "num_suborganizations": 0,
+              "annual_revenue_printed": "27M",
+              "annual_revenue": 27000000,
+              "total_funding": 27500000,
+              "total_funding_printed": "27.5M",
+              "latest_funding_round_date": "2024-04-01T00:00:00.000+00:00",
+              "latest_funding_stage": "Other",
+              "funding_events": [
+                {
+                  "id": "668f4814870eb10001390fd4",
+                  "date": "2024-04-01T00:00:00.000+00:00",
+                  "news_url": null,
+                  "type": "Other",
+                  "investors": "TA Associates",
+                  "currency": "$"
+                },
+                {
+                  "id": "5b7df954324d444379b254a4",
+                  "date": "2018-07-11T00:00:00.000+00:00",
+                  "news_url": "https://www.sec.gov/Archives/edgar/data/1746132/000174613218000001/xslFormDX01/primary_doc.xml",
+                  "type": "Venture (Round not Specified)",
+                  "investors": "",
+                  "amount": "27.5M",
+                  "currency": "$"
+                }
+              ],
+              "technology_names": [
+                "Android",
+                "Atlassian Cloud",
+                "Outlook",
+                "Pardot",
+                "Route 53",
+                "Salesforce"
+              ],
+              "current_technologies": [
+                {
+                  "uid": "android",
+                  "name": "Android",
+                  "category": "Frameworks and Programming Languages"
+                },
+                {
+                  "uid": "atlassian_cloud",
+                  "name": "Atlassian Cloud",
+                  "category": "CMS"
+                },
+                {
+                  "uid": "outlook",
+                  "name": "Outlook",
+                  "category": "Email Providers"
+                },
+                {
+                  "uid": "pardot",
+                  "name": "Pardot",
+                  "category": "Marketing Automation"
+                },
+                {
+                  "uid": "route_53",
+                  "name": "Route 53",
+                  "category": "Domain Name Services"
+                },
+                {
+                  "uid": "salesforce",
+                  "name": "Salesforce",
+                  "category": "Customer Relationship Management"
+                }
+              ],
+              "org_chart_root_people_ids": [],
+              "org_chart_sector": "OrgChart::SectorHierarchy::Rules::IT",
+              "org_chart_removed": false,
+              "org_chart_show_department_filter": true,
+              "organization_headcount_six_month_growth": null,
+              "organization_headcount_twelve_month_growth": null,
+              "organization_headcount_twenty_four_month_growth": null
+            },
+            "intent_strength": null,
+            "show_intent": false,
+            "email_domain_catchall": false,
+            "revealed_for_current_team": true,
+            "personal_emails": [],
+            "departments": [
+              "master_engineering_technical",
+              "master_information_technology"
+            ],
+            "subdepartments": [
+              "engineering_technical",
+              "software_development",
+              "application_development"
+            ],
+            "functions": [
+              "engineering"
+            ],
+            "seniority": "entry"
+          }
+        }
+      },
+      {
+        "json": {
+          "person": {
+            "id": "5b22a08ea6da98791dff8aac",
+            "first_name": "Josh",
+            "last_name": "Wright",
+            "name": "Josh Wright",
+            "linkedin_url": "<REDACTED_LINKEDIN_URL>",
+            "title": "Software Engineer and Developer",
+            "email_status": "verified",
+            "photo_url": "https://media.licdn.com/dms/image/v2/C4D03AQHtziWSO2ZqIQ/profile-displayphoto-shrink_200_200/profile-displayphoto-shrink_200_200/0/1534075550322?e=2147483647&v=beta&t=9RDh3GV0nUV_NF8XaI2nXIhng86wLXeFQbBQvf3qb68",
+            "twitter_url": null,
+            "github_url": null,
+            "facebook_url": null,
+            "extrapolated_email_confidence": null,
+            "headline": "Process Improvement | Analytics",
+            "email": "<REDACTED_EMAIL>",
+            "organization_id": "5d352665f65125f310f6d2a9",
+            "employment_history": [
+              {
+                "_id": "6933df8544dbae00013514d3",
+                "created_at": null,
+                "current": true,
+                "degree": null,
+                "description": null,
+                "emails": null,
+                "end_date": null,
+                "grade_level": null,
+                "kind": null,
+                "major": null,
+                "org_matched_by_name": null,
+                "organization_id": "5d352665f65125f310f6d2a9",
+                "organization_name": "HemaSource, Inc",
+                "raw_address": null,
+                "start_date": "2025-03-01",
+                "title": "Software Engineer and Developer",
+                "updated_at": null,
+                "id": "6933df8544dbae00013514d3",
+                "key": "6933df8544dbae00013514d3"
+              },
+              {
+                "_id": "6933df8544dbae00013514d4",
+                "created_at": null,
+                "current": false,
+                "degree": null,
+                "description": null,
+                "emails": null,
+                "end_date": "2025-02-01",
+                "grade_level": null,
+                "kind": null,
+                "major": null,
+                "org_matched_by_name": null,
+                "organization_id": "5d352665f65125f310f6d2a9",
+                "organization_name": "HemaSource, Inc",
+                "raw_address": null,
+                "start_date": "2023-09-01",
+                "title": "Software Engineer and Developer",
+                "updated_at": null,
+                "id": "6933df8544dbae00013514d4",
+                "key": "6933df8544dbae00013514d4"
+              },
+              {
+                "_id": "6933df8544dbae00013514d5",
+                "created_at": null,
+                "current": false,
+                "degree": null,
+                "description": null,
+                "emails": null,
+                "end_date": "2023-09-01",
+                "grade_level": null,
+                "kind": null,
+                "major": null,
+                "org_matched_by_name": null,
+                "organization_id": "5d352665f65125f310f6d2a9",
+                "organization_name": "HemaSource, Inc",
+                "raw_address": null,
+                "start_date": "2022-05-01",
+                "title": "Business Systems Developer",
+                "updated_at": null,
+                "id": "6933df8544dbae00013514d5",
+                "key": "6933df8544dbae00013514d5"
+              },
+              {
+                "_id": "6933df8544dbae00013514d6",
+                "created_at": null,
+                "current": false,
+                "degree": null,
+                "description": null,
+                "emails": null,
+                "end_date": "2022-04-01",
+                "grade_level": null,
+                "kind": null,
+                "major": null,
+                "org_matched_by_name": null,
+                "organization_id": "54a1aaf17468694012243f06",
+                "organization_name": "Anglepoint",
+                "raw_address": null,
+                "start_date": "2021-02-01",
+                "title": "Consultant",
+                "updated_at": null,
+                "id": "6933df8544dbae00013514d6",
+                "key": "6933df8544dbae00013514d6"
+              },
+              {
+                "_id": "6933df8544dbae00013514d7",
+                "created_at": null,
+                "current": false,
+                "degree": null,
+                "description": null,
+                "emails": null,
+                "end_date": "2021-01-01",
+                "grade_level": null,
+                "kind": null,
+                "major": null,
+                "org_matched_by_name": null,
+                "organization_id": "54a1aaf17468694012243f06",
+                "organization_name": "Anglepoint",
+                "raw_address": null,
+                "start_date": "2019-12-01",
+                "title": "Analyst",
+                "updated_at": null,
+                "id": "6933df8544dbae00013514d7",
+                "key": "6933df8544dbae00013514d7"
+              },
+              {
+                "_id": "6933df8544dbae00013514d8",
+                "created_at": null,
+                "current": false,
+                "degree": null,
+                "description": null,
+                "emails": null,
+                "end_date": "2021-03-01",
+                "grade_level": null,
+                "kind": null,
+                "major": null,
+                "org_matched_by_name": null,
+                "organization_id": "5fc94ebc3dc1550001067717",
+                "organization_name": "BrightView Consulting",
+                "raw_address": null,
+                "start_date": "2017-01-01",
+                "title": "Business Data Analyst",
+                "updated_at": null,
+                "id": "6933df8544dbae00013514d8",
+                "key": "6933df8544dbae00013514d8"
+              },
+              {
+                "_id": "6933df8544dbae00013514d9",
+                "created_at": null,
+                "current": false,
+                "degree": null,
+                "description": null,
+                "emails": null,
+                "end_date": "2020-04-01",
+                "grade_level": null,
+                "kind": null,
+                "major": null,
+                "org_matched_by_name": null,
+                "organization_id": "5d36258e80f93e4337166aaa",
+                "organization_name": "McGee & Co.",
+                "raw_address": null,
+                "start_date": "2019-01-01",
+                "title": "Distribution Coordinator",
+                "updated_at": null,
+                "id": "6933df8544dbae00013514d9",
+                "key": "6933df8544dbae00013514d9"
+              },
+              {
+                "_id": "6933df8544dbae00013514da",
+                "created_at": null,
+                "current": false,
+                "degree": null,
+                "description": null,
+                "emails": null,
+                "end_date": "2019-08-01",
+                "grade_level": null,
+                "kind": null,
+                "major": null,
+                "org_matched_by_name": null,
+                "organization_id": "62a105dcfc505d00df9c808e",
+                "organization_name": "Whirlpool Corporation",
+                "raw_address": null,
+                "start_date": "2019-05-01",
+                "title": "Global Supply Chain LDP Intern",
+                "updated_at": null,
+                "id": "6933df8544dbae00013514da",
+                "key": "6933df8544dbae00013514da"
+              },
+              {
+                "_id": "6933df8544dbae00013514db",
+                "created_at": null,
+                "current": false,
+                "degree": null,
+                "description": null,
+                "emails": null,
+                "end_date": "2018-08-01",
+                "grade_level": null,
+                "kind": null,
+                "major": null,
+                "org_matched_by_name": false,
+                "organization_id": "5f8e6117ab820101120cc9ff",
+                "organization_name": "Walmart",
+                "raw_address": null,
+                "start_date": "2018-06-01",
+                "title": "Supply Chain Operations Specialist",
+                "updated_at": null,
+                "id": "6933df8544dbae00013514db",
+                "key": "6933df8544dbae00013514db"
+              },
+              {
+                "_id": "6933df8544dbae00013514dc",
+                "created_at": null,
+                "current": false,
+                "degree": null,
+                "description": null,
+                "emails": null,
+                "end_date": "2018-05-01",
+                "grade_level": null,
+                "kind": null,
+                "major": null,
+                "org_matched_by_name": false,
+                "organization_id": "6551fbd09f5bd8000157c0e6",
+                "organization_name": "Brigham Young University",
+                "raw_address": null,
+                "start_date": "2017-04-01",
+                "title": "Computing Specialist - SQL+Python",
+                "updated_at": null,
+                "id": "6933df8544dbae00013514dc",
+                "key": "6933df8544dbae00013514dc"
+              },
+              {
+                "_id": "6933df8544dbae00013514dd",
+                "created_at": null,
+                "current": false,
+                "degree": null,
+                "description": null,
+                "emails": null,
+                "end_date": "2016-10-01",
+                "grade_level": null,
+                "kind": null,
+                "major": null,
+                "org_matched_by_name": false,
+                "organization_id": "54a1c39c7468695860df140f",
+                "organization_name": "Diamond Wireless (A Wireless)",
+                "raw_address": null,
+                "start_date": "2016-04-01",
+                "title": "Operations Analyst",
+                "updated_at": null,
+                "id": "6933df8544dbae00013514dd",
+                "key": "6933df8544dbae00013514dd"
+              },
+              {
+                "_id": "6933df8544dbae00013514de",
+                "created_at": null,
+                "current": false,
+                "degree": null,
+                "description": null,
+                "emails": null,
+                "end_date": "2016-12-01",
+                "grade_level": null,
+                "kind": null,
+                "major": null,
+                "org_matched_by_name": false,
+                "organization_id": "6551fbd09f5bd8000157c0e6",
+                "organization_name": "Brigham Young University",
+                "raw_address": null,
+                "start_date": "2016-01-01",
+                "title": "Teacher and Research Assistant",
+                "updated_at": null,
+                "id": "6933df8544dbae00013514de",
+                "key": "6933df8544dbae00013514de"
+              },
+              {
+                "_id": "6933df8544dbae00013514df",
+                "created_at": null,
+                "current": false,
+                "degree": null,
+                "description": null,
+                "emails": null,
+                "end_date": "2015-08-01",
+                "grade_level": null,
+                "kind": null,
+                "major": null,
+                "org_matched_by_name": false,
+                "organization_id": "5500cbe6736964172c986f00",
+                "organization_name": "Teerlink Cabinet",
+                "raw_address": null,
+                "start_date": "2015-06-01",
+                "title": "Delivery Driver",
+                "updated_at": null,
+                "id": "6933df8544dbae00013514df",
+                "key": "6933df8544dbae00013514df"
+              },
+              {
+                "_id": "6933df8544dbae00013514e0",
+                "created_at": null,
+                "current": false,
+                "degree": null,
+                "description": null,
+                "emails": null,
+                "end_date": "2013-06-01",
+                "grade_level": null,
+                "kind": null,
+                "major": null,
+                "org_matched_by_name": false,
+                "organization_id": null,
+                "organization_name": "Wright Mowing",
+                "raw_address": null,
+                "start_date": "2008-04-01",
+                "title": "Lawn Care Business Owner",
+                "updated_at": null,
+                "id": "6933df8544dbae00013514e0",
+                "key": "6933df8544dbae00013514e0"
+              }
+            ],
+            "street_address": "",
+            "city": "Salt Lake City",
+            "state": "Utah",
+            "country": "United States",
+            "postal_code": null,
+            "formatted_address": "Salt Lake City, UT, USA",
+            "time_zone": "America/Denver",
+            "organization": {
+              "id": "5d352665f65125f310f6d2a9",
+              "name": "HemaSource, Inc",
+              "website_url": "http://www.hemasource.com",
+              "blog_url": null,
+              "angellist_url": null,
+              "linkedin_url": "<REDACTED_LINKEDIN_COMPANY_URL>",
+              "twitter_url": "https://twitter.com/HemaSource",
+              "facebook_url": "https://facebook.com/pages/HemaSource-Inc/396395390395219",
+              "primary_phone": {
+                "number": "<REDACTED_PHONE>",
+                "source": "Owler",
+                "sanitized_number": "+18888444362"
+              },
+              "languages": [
+                "English"
+              ],
+              "alexa_ranking": null,
+              "phone": "<REDACTED_PHONE>",
+              "linkedin_uid": "825254",
+              "founded_year": 1998,
+              "publicly_traded_symbol": null,
+              "publicly_traded_exchange": null,
+              "logo_url": "https://zenprospect-production.s3.amazonaws.com/uploads/pictures/693558d96a22130001787a12/picture",
+              "crunchbase_url": null,
+              "primary_domain": "hemasource.com",
+              "sic_codes": [
+                "5047"
+              ],
+              "naics_codes": [
+                "33911"
+              ],
+              "sanitized_phone": "+18888444362",
+              "industry": "hospital & health care",
+              "estimated_num_employees": 120,
+              "keywords": [
+                "plasma collection",
+                "blood donation",
+                "customer analytics",
+                "gloves",
+                "gauze",
+                "coease arm wrap",
+                "hospitals & health care",
+                "medical supply logistics",
+                "logistics and supply chain management",
+                "medical equipment",
+                "regulatory compliance",
+                "b2b",
+                "plasma collection market",
+                "operational efficiency",
+                "multi-center savings",
+                "supply chain analytics",
+                "inventory management",
+                "clinical supply chain",
+                "customer service",
+                "waste reduction",
+                "services",
+                "patented analytics software",
+                "medical equipment and supplies manufacturing",
+                "healthcare services",
+                "patient care",
+                "data analytics",
+                "dialysis supply management",
+                "waste management",
+                "cost savings",
+                "customizable software",
+                "data analytics software",
+                "high-volume clinics",
+                "automated ordering",
+                "industry-specific expertise",
+                "supply chain management",
+                "disposables supply chain",
+                "consulting",
+                "healthcare equipment and supplies manufacturing",
+                "medical disposables",
+                "medical supply and equipment wholesaling",
+                "ambulatory clinic solutions",
+                "inventory optimization",
+                "e-commerce",
+                "healthcare",
+                "medical supply",
+                "logistics",
+                "software solutions",
+                "analytics",
+                "cost reduction",
+                "disposables",
+                "ambulatory clinics",
+                "plasma market",
+                "dialysis",
+                "hospital & health care",
+                "health care",
+                "health, wellness & fitness",
+                "logistics & supply chain",
+                "consumer internet",
+                "consumers",
+                "internet",
+                "information technology & services"
+              ],
+              "organization_revenue_printed": "30M",
+              "organization_revenue": 30000000,
+              "industries": [
+                "hospital & health care"
+              ],
+              "secondary_industries": [],
+              "snippets_loaded": true,
+              "industry_tag_id": "5567cdde73696439812c0000",
+              "industry_tag_hash": {
+                "hospital & health care": "5567cdde73696439812c0000"
+              },
+              "retail_location_count": 0,
+              "raw_address": "485 S 5700 W, Salt Lake City, Utah 84104, US",
+              "street_address": "485 S 5700 W",
+              "city": "Salt Lake City",
+              "state": "Utah",
+              "postal_code": "84104-5356",
+              "country": "United States",
+              "owned_by_organization_id": "54a11d9b69702d97c10a2d01",
+              "owned_by_organization": {
+                "id": "54a11d9b69702d97c10a2d01",
+                "name": "Ridgemont Equity Partners",
+                "website_url": "http://www.ridgemontep.com"
+              },
+              "short_description": "HemaSource, Inc. is a technology-enabled specialty logistics solution provider and medical supply distributor based in Salt Lake City, Utah. The company focuses on serving ambulatory clinics, particularly in the plasma collection and dialysis sectors. HemaSource combines advanced data analytics software with a wide range of high-quality medical disposables and related equipment to help healthcare providers optimize their operations and achieve cost savings.\n\nA key offering is HemaSource's patented web-based ordering and analytics software, ACE™, which automates inventory calculations and provides detailed usage analytics. This software enhances operational efficiency by optimizing inventory levels and reducing waste. HemaSource distributes over 1,300 SKUs from strategically located distribution centers, primarily targeting plasma collection centers, dialysis clinics, and other post-acute care settings. The company is recognized as a leading distributor in the plasma collection industry, leveraging over 100 years of combined industry experience to simplify supply chain complexities for its partners.",
+              "suborganizations": [],
+              "num_suborganizations": 0,
+              "annual_revenue_printed": "30M",
+              "annual_revenue": 30000000,
+              "total_funding": 13488000,
+              "total_funding_printed": "13.5M",
+              "latest_funding_round_date": "2010-02-01T00:00:00.000+00:00",
+              "latest_funding_stage": "Other",
+              "funding_events": [
+                {
+                  "id": "59e67ac8a6da986eceb9c597",
+                  "date": "2010-02-01T00:00:00.000+00:00",
+                  "news_url": null,
+                  "type": "Other",
+                  "investors": "",
+                  "amount": "13.5M",
+                  "currency": "$"
+                }
+              ],
+              "technology_names": [
+                "Amazon AWS",
+                "Amazon CloudFront",
+                "Amazon Elastic Load Balancer",
+                "Android",
+                "Atlassian Cloud",
+                "Bootstrap Framework",
+                "Google Tag Manager",
+                "Gravity Forms",
+                "Mobile Friendly",
+                "Outlook",
+                "Phoenix",
+                "Route 53",
+                "Slack",
+                "WordPress.org",
+                "Zendesk",
+                "reCAPTCHA"
+              ],
+              "current_technologies": [
+                {
+                  "uid": "amazon_aws",
+                  "name": "Amazon AWS",
+                  "category": "Hosting"
+                },
+                {
+                  "uid": "amazon_cloudfront",
+                  "name": "Amazon CloudFront",
+                  "category": "Content Delivery Networks"
+                },
+                {
+                  "uid": "amazon_elastic_load_balancer",
+                  "name": "Amazon Elastic Load Balancer",
+                  "category": "Load Balancers"
+                },
+                {
+                  "uid": "android",
+                  "name": "Android",
+                  "category": "Frameworks and Programming Languages"
+                },
+                {
+                  "uid": "atlassian_cloud",
+                  "name": "Atlassian Cloud",
+                  "category": "CMS"
+                },
+                {
+                  "uid": "bootstrap_framework",
+                  "name": "Bootstrap Framework",
+                  "category": "CSS and JavaScript Libraries"
+                },
+                {
+                  "uid": "google_tag_manager",
+                  "name": "Google Tag Manager",
+                  "category": "Tag Management"
+                },
+                {
+                  "uid": "gravity_forms",
+                  "name": "Gravity Forms",
+                  "category": "Hosted Forms"
+                },
+                {
+                  "uid": "mobile_friendly",
+                  "name": "Mobile Friendly",
+                  "category": "Other"
+                },
+                {
+                  "uid": "outlook",
+                  "name": "Outlook",
+                  "category": "Email Providers"
+                },
+                {
+                  "uid": "phoenix",
+                  "name": "Phoenix",
+                  "category": "Frameworks and Programming Languages"
+                },
+                {
+                  "uid": "route_53",
+                  "name": "Route 53",
+                  "category": "Domain Name Services"
+                },
+                {
+                  "uid": "slack",
+                  "name": "Slack",
+                  "category": "Chats"
+                },
+                {
+                  "uid": "wordpress_org",
+                  "name": "WordPress.org",
+                  "category": "CMS"
+                },
+                {
+                  "uid": "zendesk",
+                  "name": "Zendesk",
+                  "category": "Support and Feedback"
+                },
+                {
+                  "uid": "recaptcha",
+                  "name": "reCAPTCHA",
+                  "category": "Captcha"
+                }
+              ],
+              "org_chart_root_people_ids": [
+                "605c38a077f85800014ad045"
+              ],
+              "org_chart_sector": null,
+              "org_chart_removed": null,
+              "org_chart_show_department_filter": null,
+              "organization_headcount_six_month_growth": null,
+              "organization_headcount_twelve_month_growth": null,
+              "organization_headcount_twenty_four_month_growth": null
+            },
+            "intent_strength": null,
+            "show_intent": false,
+            "email_domain_catchall": false,
+            "revealed_for_current_team": true,
+            "personal_emails": [],
+            "departments": [
+              "master_engineering_technical",
+              "master_information_technology"
+            ],
+            "subdepartments": [
+              "engineering_technical",
+              "software_development",
+              "application_development"
+            ],
+            "functions": [
+              "engineering"
+            ],
+            "seniority": "entry"
+          }
+        }
+      }
+    ]
+  },
+  "triggerCount": 0,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  }
+}
